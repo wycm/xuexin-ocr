@@ -14,6 +14,7 @@ import cv2
 from tensorflow.python.ops import control_flow_ops
 import label_dict
 import sys
+import time
 
 stdo = sys.stdout
 reload(sys)
@@ -193,6 +194,7 @@ ckpt = None
 sess = None
 
 
+# 预测
 def inference(name_list):
     global is_build, graph, saver, ckpt, sess
     image_set = []
@@ -241,6 +243,84 @@ def inference(name_list):
     return val_list, idx_list
 
 
+# 训练
+def train():
+    print('Begin training')
+    # 填好数据读取的路径
+    train_feeder = DataIterator(data_dir='./dataset/train/')
+    test_feeder = DataIterator(data_dir='./dataset/test/')
+    model_name = 'chinese-rec-model'
+    with tf.Session(config=tf.ConfigProto(gpu_options=gpu_options, allow_soft_placement=True)) as sess:
+        # batch data 获取
+        train_images, train_labels = train_feeder.input_pipeline(batch_size=FLAGS.batch_size, aug=True)
+        test_images, test_labels = test_feeder.input_pipeline(batch_size=FLAGS.batch_size)
+        graph = build_graph(top_k=1)  # 训练时top k = 1
+        saver = tf.train.Saver()
+        sess.run(tf.global_variables_initializer())
+        # 设置多线程协调器
+        coord = tf.train.Coordinator()
+        threads = tf.train.start_queue_runners(sess=sess, coord=coord)
+
+        # train_writer = tf.summary.FileWriter(FLAGS.log_dir + '/train', sess.graph)
+        # test_writer = tf.summary.FileWriter(FLAGS.log_dir + '/val')
+        start_step = 0
+        # 可以从某个step下的模型继续训练
+        if FLAGS.restore:
+            ckpt = tf.train.latest_checkpoint(FLAGS.checkpoint_dir)
+            if ckpt:
+                saver.restore(sess, ckpt)
+                print("restore from the checkpoint {0}".format(ckpt))
+                start_step += int(ckpt.split('-')[-1])
+
+        print(':::Training Start:::')
+        try:
+            i = 0
+            while not coord.should_stop():
+                i += 1
+                start_time = time.time()
+                train_images_batch, train_labels_batch = sess.run([train_images, train_labels])
+                feed_dict = {graph['images']: train_images_batch,
+                             graph['labels']: train_labels_batch,
+                             graph['keep_prob']: 0.8,
+                             graph['is_training']: True}
+                _, loss_val, train_summary, step = sess.run(
+                    [graph['train_op'], graph['loss'], graph['merged_summary_op'], graph['global_step']],
+                    feed_dict=feed_dict)
+                #                 train_writer.add_summary(train_summary, step)
+                end_time = time.time()
+                print("the step {0} takes {1} loss {2}".format(step, end_time - start_time, loss_val))
+                if step > FLAGS.max_steps:
+                    break
+                if step % FLAGS.eval_steps == 1:
+                    test_images_batch, test_labels_batch = sess.run([test_images, test_labels])
+                    feed_dict = {graph['images']: test_images_batch,
+                                 graph['labels']: test_labels_batch,
+                                 graph['keep_prob']: 1.0,
+                                 graph['is_training']: False}
+                    accuracy_test, test_summary = sess.run([graph['accuracy'], graph['merged_summary_op']],
+                                                           feed_dict=feed_dict)
+
+                    # if step > 300:
+                    #     test_writer.add_summary(test_summary, step)
+                    print('===============Eval a batch=======================')
+                    print('the step {0} test accuracy: {1}'
+                          .format(step, accuracy_test))
+                    print('===============Eval a batch=======================')
+                if step % FLAGS.save_steps == 1:
+                    print('Save the ckpt of {0}'.format(step))
+                    saver.save(sess, os.path.join(FLAGS.checkpoint_dir, model_name),
+                               global_step=graph['global_step'])
+                    if accuracy_test > 0.999:
+                        break
+        except tf.errors.OutOfRangeError:
+            print('==================Train Finished================')
+            saver.save(sess, os.path.join(FLAGS.checkpoint_dir, model_name), global_step=graph['global_step'])
+        finally:
+            # 达到最大训练迭代数的时候清理关闭线程
+            coord.request_stop()
+        coord.join(threads)
+
+
 def pred(path):
     name_list = get_file_list(path)
     # binary_pic(name_list)
@@ -271,18 +351,5 @@ def pred(path):
     print(''.join(result))
     return ''.join(result), pred_val_list
 
-
-def pred_pic(path, base_path='/Users/wangyang/PycharmProjects/py3-venv-demo/img/resources/xuexin_samples/'):
-    pic1_path = base_path + path
-
-    for sub_path in os.listdir(pic1_path):
-        sub_path = pic1_path + sub_path + '/'
-        for i in os.listdir(sub_path):
-            if os.path.isdir(sub_path + i):
-                pred(sub_path + i)
-
-
 if __name__ == "__main__":
-    # pred('/var/www/tmp/d2d66187-1be2-11ea-a6f7-4c32759549cd/0/0')
-    pred(
-        '/Users/wangyang/PycharmProjects/py3-venv-demo/img/resources/xuexin_samples/7c2c4b40-166f-11ea-b3c0-a6ee154a7ce6/school1/3/1')
+    train()

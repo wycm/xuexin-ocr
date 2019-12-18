@@ -59,9 +59,6 @@ class Splitter(object):
                 new_peek_ranges.append(peek_range)
         return new_peek_ranges
 
-    # 填充图片，图片size不足30 * 30进行填充
-    # 分割出来的图片默认为13 * 14
-    # 注意：经过多次测试填充后的识别效果很差
     def fill(self, img, i, result_img_path, sub_segment=False):
         flag = False
         left = 0
@@ -197,10 +194,3 @@ class Splitter(object):
         ''
         # cv2.imshow(img_name, img)
         # cv2.waitKey(0)
-
-
-if __name__ == '__main__':
-    splitter = Splitter()
-    splitter.process_by_path('/Users/wangyang/PycharmProjects/py3-venv-demo/img/resources/mult_line_bin.png'
-                             , '/Users/wangyang/PycharmProjects/py3-venv-demo/img/resources/mult_line/'
-                             , minimun_range=3)

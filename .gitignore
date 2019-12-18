@@ -5,3 +5,10 @@ target/
 .classpath
 .project
 .settings/
+
+dataset/train/
+dataset/test/
+checkpoint/
+chinese_fonts/
+
+*.zip
