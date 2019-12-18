@@ -12,3 +12,4 @@ checkpoint/
 chinese_fonts/
 
 *.zip
+*.pyc
